@@ -33,7 +33,6 @@ public interface StockMapper {
      * @return
      */
     @Update("UPDATE sk_stock SET count = #{count, jdbcType = INTEGER}, " +
-            "name = #{name, jdbcType = VARCHAR}, " +
             "sale = #{sale,jdbcType = INTEGER}," +
             "version = #{version,jdbcType = INTEGER} " +
             "WHERE id = #{id, jdbcType = INTEGER}")

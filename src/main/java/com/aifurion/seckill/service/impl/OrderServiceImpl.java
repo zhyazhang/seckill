@@ -90,4 +90,16 @@ public class OrderServiceImpl implements OrderService {
     }
 
 
+    @Override
+    public int createOptimisticLockAndRedis(int sid) {
+
+        //从redis读，校验库存
+        Stock stock = stockService.checkStockWithRedis(sid);
+
+        //更新数据块和redis
+        stockService.updateStockOptimisticLockWithRedis(stock);
+
+        //创建订单
+        return createOrder(stock);
+    }
 }

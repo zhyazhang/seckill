@@ -23,4 +23,12 @@ public interface OrderService {
      */
     int createOptimisticLock(int sid);
 
+
+    /**
+     * 乐观锁和读redis
+     * @param sid
+     * @return
+     */
+    int createOptimisticLockAndRedis(int sid);
+
 }

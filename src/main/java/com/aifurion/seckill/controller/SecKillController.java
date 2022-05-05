@@ -94,4 +94,26 @@ public class SecKillController {
     }
 
 
+    /**
+     * redis限流+读redis+乐观锁
+     *
+     * @param sid
+     * @return
+     */
+    @PostMapping("createOptimisticLockAndRedisOrder")
+    public String createOptimisticLockAndRedisOrder(int sid) {
+
+        int res = 0;
+        try {
+            if (redisLimit.limit()) {
+                res = orderService.createOptimisticLockAndRedis(sid);
+            }
+        } catch (Exception e) {
+            log.error("Exception:" + e);
+        }
+
+        return res == 1 ? SUCCESS : ERROR;
+    }
+
+
 }

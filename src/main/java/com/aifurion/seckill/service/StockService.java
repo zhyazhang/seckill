@@ -46,4 +46,19 @@ public interface StockService {
     Stock getStockById(int id);
 
 
+    /**
+     * 从redis读数据，校验库存
+     * @param id
+     * @return
+     */
+    Stock checkStockWithRedis(int id);
+
+
+    /**
+     * 更新数据库和redis
+     * @param id
+     */
+    void updateStockOptimisticLockWithRedis(Stock stock);
+
+
 }

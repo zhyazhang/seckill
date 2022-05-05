@@ -1,5 +1,8 @@
 package com.aifurion.seckill.service.impl;
 
+import com.aifurion.seckill.common.stockWithRedis.RedisKeysConstant;
+import com.aifurion.seckill.common.stockWithRedis.StockWithRedis;
+import com.aifurion.seckill.common.utils.RedisPoolUtil;
 import com.aifurion.seckill.dao.StockMapper;
 import com.aifurion.seckill.pojo.Stock;
 import com.aifurion.seckill.service.StockService;
@@ -69,4 +72,47 @@ public class StockServiceImpl implements StockService {
         return stockMapper.selectStockById(id);
     }
 
+
+    /**
+     * 从redis读数据，校验库存
+     *
+     * @param id
+     * @return
+     */
+    @Override
+    public Stock checkStockWithRedis(int id) {
+
+        int count = Integer.parseInt(RedisPoolUtil.get(RedisKeysConstant.STOCK_COUNT + id));
+        int sale = Integer.parseInt(RedisPoolUtil.get(RedisKeysConstant.STOCK_SALE + id));
+        int version =
+                Integer.parseInt(RedisPoolUtil.get(RedisKeysConstant.STOCK_VERSION + id));
+
+        if (count < 1) {
+            log.info("库存不足");
+            throw new RuntimeException("库存不足 Redis currentCount: " + count);
+        }
+
+        // 热更新，但是在数据库中只有一个商品，直接赋值
+        Stock stock = new Stock(id, count, sale, version);
+        stock.setId(id);
+        stock.setCount(count);
+        stock.setSale(sale);
+        stock.setVersion(version);
+
+        return stock;
+    }
+
+
+    @Override
+    public void updateStockOptimisticLockWithRedis(Stock stock) {
+
+        //更新数据库
+        int res = updateStockByOptimisticLock(stock);
+        if (res == 0) {
+            throw new RuntimeException("并发更新库存失败");
+        }
+
+        //更新redis
+        StockWithRedis.updateRedisStock(stock);
+    }
 }
