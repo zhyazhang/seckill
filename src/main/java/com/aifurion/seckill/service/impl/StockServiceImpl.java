@@ -62,4 +62,11 @@ public class StockServiceImpl implements StockService {
 
         return stockMapper.updateByOptimistic(stock);
     }
+
+
+    @Override
+    public Stock getStockById(int id) {
+        return stockMapper.selectStockById(id);
+    }
+
 }

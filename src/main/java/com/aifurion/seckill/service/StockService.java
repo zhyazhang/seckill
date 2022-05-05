@@ -12,6 +12,7 @@ public interface StockService {
 
     /**
      * 检查库存
+     *
      * @param sid
      * @return
      */
@@ -20,6 +21,7 @@ public interface StockService {
 
     /**
      * 减库存
+     *
      * @param stock
      * @return
      */
@@ -28,12 +30,20 @@ public interface StockService {
 
     /**
      * 乐观锁实现
+     *
      * @param stock
      * @return
      */
     int updateStockByOptimisticLock(Stock stock);
 
 
+    /**
+     * 根据 id 查询剩余库存信息
+     *
+     * @param id
+     * @return stock
+     */
+    Stock getStockById(int id);
 
 
 }

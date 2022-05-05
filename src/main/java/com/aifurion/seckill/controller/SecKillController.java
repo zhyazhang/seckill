@@ -1,5 +1,6 @@
 package com.aifurion.seckill.controller;
 
+import com.aifurion.seckill.common.limit.RedisLimit;
 import com.aifurion.seckill.service.OrderService;
 import com.aifurion.seckill.service.StockService;
 import lombok.extern.slf4j.Slf4j;
@@ -28,9 +29,13 @@ public class SecKillController {
     @Autowired
     private OrderService orderService;
 
+    @Autowired
+    private RedisLimit redisLimit;
+
 
     /**
      * 秒杀基本过程,存在超卖问题
+     *
      * @param sid
      * @return
      */
@@ -49,6 +54,7 @@ public class SecKillController {
 
     /**
      * 乐观锁实现
+     *
      * @param sid
      * @return
      */
@@ -64,7 +70,27 @@ public class SecKillController {
         }
 
         return res == 1 ? SUCCESS : ERROR;
+    }
 
+    /**
+     * 乐观锁加redis限流
+     *
+     * @param sid
+     * @return
+     */
+    @PostMapping("createOptimisticLockWithLimitOrder")
+    public String createOptimisticLockWithLimitOrder(int sid) {
+
+        int res = 0;
+        try {
+            if (redisLimit.limit()) {
+                res = orderService.createOptimisticLock(sid);
+            }
+        } catch (Exception e) {
+            log.error("Exception: " + e);
+        }
+
+        return res == 1 ? SUCCESS : ERROR;
     }
 
 

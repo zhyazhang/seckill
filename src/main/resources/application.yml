@@ -7,3 +7,17 @@ spring:
     password: 123456
     driver-class-name: com.mysql.cj.jdbc.Driver
     type: com.alibaba.druid.pool.DruidDataSource
+
+
+
+  redis:
+    host: 127.0.0.1
+    port: 6379
+
+redis:
+  maxIdle: 100
+  maxTotal: 300
+  maxWait: 10000
+  testOnBorrow: true
+  timeout: 100000
+  limit: 5
