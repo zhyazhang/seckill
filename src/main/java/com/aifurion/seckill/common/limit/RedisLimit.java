@@ -21,7 +21,7 @@ public class RedisLimit {
 
     private static final int FAIL_CODE = 0;
 
-    @Value("${redis.limit}")
+    @Value("${spring.redis.limit}")
     private Integer limit;
 
     /**

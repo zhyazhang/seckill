@@ -1,5 +1,7 @@
 package com.aifurion.seckill.service;
 
+import com.aifurion.seckill.pojo.Stock;
+
 /**
  * @author ：zzy
  * @description：TODO
@@ -30,5 +32,19 @@ public interface OrderService {
      * @return
      */
     int createOptimisticLockAndRedis(int sid);
+
+
+    /**
+     * 限流 + Redis 缓存库存 + Kafka 异步下单
+     * @param sid
+     */
+    void createOrderWithLimitAndRedisAndKafka(int sid);
+
+
+    /**
+     * 消费kafka消息
+     * @param stock
+     */
+    void consumerTopicToCreateOrderWithKafka(Stock stock);
 
 }

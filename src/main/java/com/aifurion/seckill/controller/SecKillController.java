@@ -115,5 +115,25 @@ public class SecKillController {
         return res == 1 ? SUCCESS : ERROR;
     }
 
+    /**
+     *限流 + Redis 缓存库存 + Kafka 异步下单
+     * @param sid
+     * @return
+     */
+
+    @PostMapping("createOrderWithLimitAndRedisAndKafka")
+    public String createOrderWithLimitAndRedisAndKafka(int sid) {
+
+        try {
+            if (redisLimit.limit()) {
+                orderService.createOrderWithLimitAndRedisAndKafka(sid);
+            }
+        } catch (Exception e) {
+            log.error("Exception:" + e);
+        }
+
+        return "请求正在处理，排队中";
+    }
+
 
 }

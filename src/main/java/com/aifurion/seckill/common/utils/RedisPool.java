@@ -17,22 +17,21 @@ import javax.annotation.PostConstruct;
 @Component
 public class RedisPool {
 
-
     private static JedisPool pool;
 
-    @Value("${redis.maxIdle}")
+    @Value("${spring.redis.maxIdle}")
     private Integer maxTotal;
 
-    @Value("${redis.maxTotal}")
+    @Value("${spring.redis.maxTotal}")
     private Integer maxIdle;
 
-    @Value("${redis.maxWait}")
+    @Value("${spring.redis.maxWait}")
     private Integer maxWait;
 
-    @Value("${redis.testOnBorrow}")
+    @Value("${spring.redis.testOnBorrow}")
     private Boolean testOnBorrow;
 
-    @Value("${redis.timeout}")
+    @Value("${spring.redis.thetimeout}")
     private Integer timeout;
 
     @Value("${spring.redis.host}")
@@ -43,7 +42,6 @@ public class RedisPool {
 
 
     // 类加载到 jvm 时直接初始化连接池
-
 
     @PostConstruct
     public void init() {
