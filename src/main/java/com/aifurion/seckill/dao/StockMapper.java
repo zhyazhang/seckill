@@ -18,6 +18,7 @@ public interface StockMapper {
 
     /**
      * 通过id获得库存信息
+     *
      * @param id
      * @return
      */
@@ -27,6 +28,7 @@ public interface StockMapper {
 
     /**
      * 更新库存
+     *
      * @param stock
      * @return
      */
@@ -36,6 +38,17 @@ public interface StockMapper {
             "version = #{version,jdbcType = INTEGER} " +
             "WHERE id = #{id, jdbcType = INTEGER}")
     int updateStockById(Stock stock);
+
+
+    /**
+     * 乐观锁
+     * @param stock
+     * @return
+     */
+    @Update("UPDATE sk_stock SET count = count - 1, sale = sale + 1, version = version + 1 " +
+            "WHERE id = #{id, jdbcType = INTEGER} " +
+            "AND version = #{version, jdbcType = INTEGER}")
+    int updateByOptimistic(Stock stock);
 
 
 }

@@ -30,7 +30,7 @@ public class SecKillController {
 
 
     /**
-     * 秒杀基本过程
+     * 秒杀基本过程,存在超卖问题
      * @param sid
      * @return
      */
@@ -44,6 +44,27 @@ public class SecKillController {
         }
 
         return res == 1 ? SUCCESS : ERROR;
+    }
+
+
+    /**
+     * 乐观锁实现
+     * @param sid
+     * @return
+     */
+    @PostMapping("createOptimisticLockOrder")
+    public String createOptimisticLockOrder(int sid) {
+
+        int res = 0;
+
+        try {
+            res = orderService.createOptimisticLock(sid);
+        } catch (Exception e) {
+            log.error("Exception:" + e);
+        }
+
+        return res == 1 ? SUCCESS : ERROR;
+
     }
 
 

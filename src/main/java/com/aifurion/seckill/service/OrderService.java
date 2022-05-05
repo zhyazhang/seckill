@@ -7,6 +7,20 @@ package com.aifurion.seckill.service;
  */
 public interface OrderService {
 
+
+    /**
+     * 秒杀基本思路 存在超卖问题
+     * @param sid
+     * @return
+     */
     int createNormalOrder(int sid);
+
+
+    /**
+     * 乐观锁
+     * @param sid
+     * @return
+     */
+    int createOptimisticLock(int sid);
 
 }

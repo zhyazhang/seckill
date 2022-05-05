@@ -51,6 +51,23 @@ public class OrderServiceImpl implements OrderService {
 
     }
 
+    /**
+     * 乐观锁
+     * @param sid
+     * @return
+     */
+    @Override
+    public int createOptimisticLock(int sid) {
+
+        Stock stock = stockService.checkStock(sid);
+
+        int count = stockService.updateStockByOptimisticLock(stock);
+
+        if (count == 0) {
+            throw new RuntimeException("并发更新库存失败");
+        }
+        return createOrder(stock);
+    }
 
     /**
      * 创建订单
