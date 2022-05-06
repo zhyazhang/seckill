@@ -3,6 +3,7 @@ package com.aifurion.seckill.controller;
 import com.aifurion.seckill.common.limit.RedisLimit;
 import com.aifurion.seckill.service.OrderService;
 import com.aifurion.seckill.service.StockService;
+import com.google.common.util.concurrent.RateLimiter;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.ibatis.annotations.Param;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -10,6 +11,7 @@ import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.*;
 
 import javax.servlet.http.HttpServletRequest;
+import java.util.concurrent.TimeUnit;
 
 /**
  * @author ：zzy
@@ -31,6 +33,9 @@ public class SecKillController {
 
     @Autowired
     private RedisLimit redisLimit;
+
+
+    private RateLimiter rateLimiter = RateLimiter.create(5);
 
 
     /**
@@ -95,6 +100,29 @@ public class SecKillController {
 
 
     /**
+     * Guava令牌桶限流
+     * @param sid
+     * @return
+     */
+
+    @PostMapping("createGuavaLimitOrder")
+    public String createGuavaLimitOrder(int sid) {
+        int res = 0;
+
+        try {
+            if (rateLimiter.tryAcquire()) {
+                res = orderService.createOptimisticLock(sid);
+            }
+        } catch (Exception e) {
+            log.error("Exception: " + e);
+        }
+
+        return res == 1 ? SUCCESS : ERROR;
+
+    }
+
+
+    /**
      * redis限流+读redis+乐观锁
      *
      * @param sid
@@ -116,7 +144,8 @@ public class SecKillController {
     }
 
     /**
-     *限流 + Redis 缓存库存 + Kafka 异步下单
+     * 限流 + Redis 缓存库存 + Kafka 异步下单
+     *
      * @param sid
      * @return
      */

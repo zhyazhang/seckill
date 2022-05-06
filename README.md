@@ -15,11 +15,17 @@
 
 
 
-秒杀活动可以分为3个阶段：
+##### 秒杀活动可以分为3个阶段：
 
 1. 秒杀前：用户不断刷新商品详情页，页面请求达到瞬时峰值。
 2. 秒杀开始：用户点击秒杀按钮，下单请求达到瞬时峰值。
 3. 秒杀后：一部分成功下单的用户不断刷新订单或者产生退单操作，大部分用户继续刷新商品详情页等待退单机会。
+
+##### 保护高并发系统的3把利器
+
+1. 缓存：缓存的目的是提升系统访问速度和增大系统处理容量
+2. 降级：降级是当服务器压力剧增的情况下，根据当前业务情况及流量对一些服务和页面有策略的降级，以此释放服务器资源以保证核心任务的正常运行
+3. 限流：限流的目的是通过对并发访问/请求进行限速，或者对一个时间窗口内的请求进行限速来保护系统，一旦达到限制速率则可以拒绝服务、排队或等待、降级等处理。
 
 #### 2 秒杀需要解决的问题
 
@@ -57,6 +63,33 @@
 
 
 ### 系统实现
+
+数据库建表
+
+```sql
+-- ----------------------------
+-- Table structure for sk_order
+-- ----------------------------
+DROP TABLE IF EXISTS `sk_order`;
+CREATE TABLE `sk_order` (
+  `id` int(11) unsigned NOT NULL AUTO_INCREMENT,
+  `sid` int(11) NOT NULL COMMENT '库存ID',
+  `create_time` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '创建时间',
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8;
+
+-- ----------------------------
+-- Table structure for sk_stock
+-- ----------------------------
+DROP TABLE IF EXISTS `sk_stock`;
+CREATE TABLE `sk_stock` (
+  `id` int(11) unsigned NOT NULL AUTO_INCREMENT,
+  `count` int(11) NOT NULL COMMENT '库存',
+  `sale` int(11) NOT NULL COMMENT '已售',
+  `version` int(11) NOT NULL COMMENT '版本号',
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8;
+```
 
 #### 1 基本思路
 
@@ -106,7 +139,7 @@ private int createOrder(Stock stock) {
 }
 ```
 
-可能会出现超卖问题
+**可能会出现超卖问题**
 
 #### 2 乐观锁解决超卖问题
 
@@ -134,11 +167,175 @@ public int createOptimisticLock(int sid) {
 int updateByOptimistic(Stock stock);
 ```
 
-#### 3 Redis计数限流
+#### 3 接口限流
+
+#####  1 什么是接口限流？
+
+ 某一时间窗口内的请求数进行限制，保持系统的可用性和稳定性，防止因流量暴增而导致的系统运行缓慢或宕机。根据前面的优化分析，假设现在有`10`个商品，有`1000`个并发秒杀请求，最终只有`10`个订单会成功创建，也就是说有`990`的请求是无效的，这些无效的请求也会给数据库带来压力，因此可以在在请求落到数据库之前就将无效的请求过滤掉，将并发控制在一个可控的范围，这样落到数据库的压力就小很多。
+
+常用限流算法有**令牌桶**、**漏斗**算法。
+
+
+
+##### 2 漏斗算法
+
+把请求比作是水，水来了都先放进桶里，并以限定的速度出水，当水来得过猛而出水不够快时就会导致水直接溢出，即拒绝服务。漏斗有一个进水口和一个出水口，出水口以一定速率出水，并且有一个最大出水速率。
+
+![img](images/081225378155003.png)
+
+1. 在漏斗中没有水的时候:
+   - 如果进水速率小于等于最大出水速率，那么，出水速率等于进水速率，此时，不会积水
+   - 如果进水速率大于最大出水速率，那么，漏斗以最大速率出水，此时，多余的水会积在漏斗中
+2. 在漏斗中有水的时候:
+   - 如果漏斗未满，且有进水的话，那么这些水会积在漏斗中
+   - 如果漏斗已满，且有进水的话，那么这些水会溢出到漏斗之外，**对于溢出的流量，漏斗会采用拒绝的方式，防止流量继续进入。**
+
+**对于很多应用场景来说，除了要求能够限制数据的平均传输速率外，还要求允许某种程度的突发传输。**这时候漏桶算法可能就不合适。
+
+**代码实现：**
+
+```java
+class FunnelRateLimiter {
+    // 容量
+    private final int capacity;
+    // 每毫秒漏水的速度
+    private final double leakingRate;
+    // 漏斗没有被占满的体积
+    private int emptyCapacity;
+    // 上次漏水的时间
+    private long lastLeakingTime = System.currentTimeMillis();
+
+
+    FunnelRateLimiter(int capacity, double leakingRate) {
+        this.capacity = capacity;
+        this.leakingRate = leakingRate;
+        // 初始化为一个空的漏斗
+        this.emptyCapacity = capacity;
+    }
+
+    private void makeSpace() {
+        long currentTimeMillis = System.currentTimeMillis();
+       // 计算离上次漏斗的时间
+        long gap = currentTimeMillis - lastLeakingTime;
+       // 计算离上次漏斗的时间到现在漏掉的水
+        double deltaQuota = (int) gap * leakingRate;
+        // 更新上次漏的水
+        lastLeakingTime = currentTimeMillis;
+        // 间隔时间太长，整数数字过大溢出 
+       if (deltaQuota < 0) {
+            emptyCapacity = capacity;
+        }
+        // 更新腾出的空间
+        emptyCapacity += deltaQuota;
+        // 超出最大限制 复原
+        if (emptyCapacity > capacity) {
+            emptyCapacity = capacity;
+        }
+
+    }
+
+    boolean isActionAllowed(int quota) {
+        makeSpace();
+       // 如果腾出的空间大于需要的空间
+        if (emptyCapacity >= quota) {
+           // 给腾出空间注入流量
+            emptyCapacity -= quota;
+            return true;
+        }
+        return false;
+    }
+}
+```
+
+
+
+##### 3 令牌桶算法
+
+最初来源于计算机网络。在网络传输数据时，为了防止网络拥塞，需限制流出网络的流量，使流量以比较均匀的速度向外发送。令牌桶算法就实现了这个功能，可控制发送到网络上数据的数目，并允许突发数据的发送。大小固定的令牌桶可自行以恒定的速率源源不断地产生令牌。**如果令牌不被消耗，或者被消耗的速度小于产生的速度，令牌就会不断地增多，直到把桶填满。后面再产生的令牌就会从桶中溢出，最后桶中可以保存的最大令牌数永远不会超过桶的大小**。这意味，**面对瞬时大流量，该算法可以在短时间内请求拿到大量令牌**，而且拿令牌的过程并不是消耗很大的事情。
+
+![token_limit](images/token_limit.png)
+
+> Google开源工具包Guava提供了限流工具类RateLimiter，该类基于令牌桶算法来完成限流。
+
+```java
+public double acquire() {
+    return acquire(1);
+}
+
+ public double acquire(int permits) {
+    checkPermits(permits);  //检查参数是否合法（是否大于0）
+    long microsToWait;
+    synchronized (mutex) { //应对并发情况需要同步
+        microsToWait = reserveNextTicket(permits, readSafeMicros()); //获得需要等待的时间 
+    }
+    ticker.sleepMicrosUninterruptibly(microsToWait); //等待，当未达到限制时，microsToWait为0
+    return 1.0 * microsToWait / TimeUnit.SECONDS.toMicros(1L);
+}
+
+private long reserveNextTicket(double requiredPermits, long nowMicros) {
+    resync(nowMicros); //补充令牌
+    long microsToNextFreeTicket = nextFreeTicketMicros - nowMicros;
+    double storedPermitsToSpend = Math.min(requiredPermits, this.storedPermits); //获取这次请求消耗的令牌数目
+    double freshPermits = requiredPermits - storedPermitsToSpend;
+
+    long waitMicros = storedPermitsToWaitTime(this.storedPermits, storedPermitsToSpend)
+            + (long) (freshPermits * stableIntervalMicros); 
+
+    this.nextFreeTicketMicros = nextFreeTicketMicros + waitMicros;
+    this.storedPermits -= storedPermitsToSpend; // 减去消耗的令牌
+    return microsToNextFreeTicket;
+}
+
+private void resync(long nowMicros) {
+    // if nextFreeTicket is in the past, resync to now
+    if (nowMicros > nextFreeTicketMicros) {
+        storedPermits = Math.min(maxPermits,
+                storedPermits + (nowMicros - nextFreeTicketMicros) / stableIntervalMicros);
+        nextFreeTicketMicros = nowMicros;
+    }
+}
+```
+
+
+
+##### 4 代码实现
+
+###### 4.1 Guava令牌桶限流
+
+```java
+// 创建令牌桶实例, 每秒给桶中放10个令牌
+private RateLimiter rateLimiter = RateLimiter.create(10);
+
+/**
+ * Guava令牌桶限流
+ *
+ */
+@PostMapping("createGuavaLimitOrder")
+public String createGuavaLimitOrder(int sid) {
+    int res = 0;
+
+//rateLimiter.tryAcquire()
+//尝试获取1个令牌，不会阻塞当前线程，立即返回是否获取成功。
+
+    try {
+        if (rateLimiter.tryAcquire()) {
+            res = orderService.createOptimisticLock(sid);
+        }
+    } catch (Exception e) {
+        log.error("Exception: " + e);
+    }
+
+    return res == 1 ? SUCCESS : ERROR;
+}
+```
+
+
+
+###### 4.2 Redis实现限流
 
 ![redis_limit](images/redis_limit.png)
 
-根据前面的优化分析，假设现在有`10`个商品，有`1000`个并发秒杀请求，最终只有`10`个订单会成功创建，也就是说有`990`的请求是无效的，这些无效的请求也会给数据库带来压力，因此可以在在请求落到数据库之前就将无效的请求过滤掉，将并发控制在一个可控的范围，这样落到数据库的压力就小很多。
+
 
 在 `RedisPool `中对 `Jedis `线程池进行了简单的封装，封装了初始化和关闭方法，同时在 `RedisPoolUtil `中对 `Jedis `常用 `API `进行简单封装，每个方法调用完毕则关闭 `Jedis `连接。限流要保证写入 `Redis `操作的原子性，因此利用 `Redis `的单线程机制，通过 `lua`脚本来完成。
 
