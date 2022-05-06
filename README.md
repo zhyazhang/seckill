@@ -15,13 +15,13 @@
 
 
 
-##### 秒杀活动可以分为3个阶段：
+##### 1.1 秒杀活动可以分为3个阶段：
 
 1. 秒杀前：用户不断刷新商品详情页，页面请求达到瞬时峰值。
 2. 秒杀开始：用户点击秒杀按钮，下单请求达到瞬时峰值。
 3. 秒杀后：一部分成功下单的用户不断刷新订单或者产生退单操作，大部分用户继续刷新商品详情页等待退单机会。
 
-##### 保护高并发系统的3把利器
+##### 1.2 保护高并发系统的3把利器
 
 1. 缓存：缓存的目的是提升系统访问速度和增大系统处理容量
 2. 降级：降级是当服务器压力剧增的情况下，根据当前业务情况及流量对一些服务和页面有策略的降级，以此释放服务器资源以保证核心任务的正常运行
@@ -99,7 +99,6 @@ CREATE TABLE `sk_stock` (
 
 ```java
 public int createNormalOrder(int sid) {
-
     //检查库存
     Stock stock = stockService.checkStock(sid);
     //出售
@@ -143,9 +142,7 @@ private int createOrder(Stock stock) {
 
 #### 2 乐观锁解决超卖问题
 
-<img src="images/seckill.drawio.png" alt="seckill.drawio" style="zoom:80%;" />
-
-
+<img src="images/plock.png" alt="seckill.drawio" style="zoom:80%;" />
 
 ```java
 //乐观锁
@@ -204,8 +201,7 @@ class FunnelRateLimiter {
     private int emptyCapacity;
     // 上次漏水的时间
     private long lastLeakingTime = System.currentTimeMillis();
-
-
+    
     FunnelRateLimiter(int capacity, double leakingRate) {
         this.capacity = capacity;
         this.leakingRate = leakingRate;
@@ -231,7 +227,6 @@ class FunnelRateLimiter {
         if (emptyCapacity > capacity) {
             emptyCapacity = capacity;
         }
-
     }
 
     boolean isActionAllowed(int quota) {
@@ -300,6 +295,8 @@ private void resync(long nowMicros) {
 
 ##### 4 代码实现
 
+![redis_limit](images/limit.png)
+
 ###### 4.1 Guava令牌桶限流
 
 ```java
@@ -332,10 +329,6 @@ public String createGuavaLimitOrder(int sid) {
 
 
 ###### 4.2 Redis实现限流
-
-![redis_limit](images/redis_limit.png)
-
-
 
 在 `RedisPool `中对 `Jedis `线程池进行了简单的封装，封装了初始化和关闭方法，同时在 `RedisPoolUtil `中对 `Jedis `常用 `API `进行简单封装，每个方法调用完毕则关闭 `Jedis `连接。限流要保证写入 `Redis `操作的原子性，因此利用 `Redis `的单线程机制，通过 `lua`脚本来完成。
 
@@ -392,6 +385,8 @@ public String createOptimisticLockWithLimitOrder(int sid) {
 }
 ```
 
+**lua脚本**
+
 ```lua
 -- 计数限流
 -- 每次请求都将当前时间，精确到秒作为 key 放入 Redis 中，超时时间设置为 2s， Redis 将该 key 的值进行自增
@@ -422,7 +417,7 @@ end
 
 #### 4 Redis缓存库存信息
 
-![read_redis_limit](images/read_redis_limit.png)
+![read_redis_limit](images/limit_readredis.png)
 
 虽然限流能够过滤掉一些无效的请求，但是还是会有很多请求落在数据库上，通过 `Druid` 监控可以看出，实时查询库存的语句被大量调用，对于每个没有被过滤掉的请求，都会去数据库查询库存来判断库存是否充足，对于这个查询可以放在缓存 `Redis `中，`Redis `的数据是存放在内存中的，速度快很多。
 
@@ -451,15 +446,13 @@ public void run(ApplicationArguments args) throws Exception {
 
 ##### 4.2 缓存和数据一致性
 
-
-
 #### 5 Kafka异步
 
 服务器的资源是恒定的，你用或者不用它的处理能力都是一样的，所以出现峰值的话，很容易导致忙到处理不过来，闲的时候却又没有什么要处理，因此可以通过削峰来延缓用户请求的发出，让服务端处理变得更加平稳。
 
 可以使用消息队列 Kafka 来缓冲瞬时流量，将同步的直接调用转成异步的间接推送，中间通过一个队列在一端承接瞬时的流量洪峰，在另一端平滑地将消息推送出去。
 
-![kafka](images/kafka.png)
+![kafka](images/limit_kafka.png)
 
 ```java
 /**
@@ -521,4 +514,44 @@ public void consumerTopicToCreateOrderWithKafka(Stock stock) {
     }
 }
 ```
+
+
+
+### Jmeter并发测试
+
+结果可以看到，guava限流redis实现效果更好。
+
+基本秒杀思路
+
+![normal](images/normal.jpg)
+
+乐观锁
+
+![plock](images/plock.jpg)
+
+redis限流
+
+![redis_limit](images/redis_limit.jpg)
+
+guava限流
+
+![gg_limit](images/gg_limit.jpg)
+
+
+
+redis限流+读redis
+
+![read_redis_redis_limit](images/read_redis_redis_limit.jpg)
+
+guava限流+读redis
+
+![gg_limit](images/gg_limit.jpg)
+
+redis限流+kafka
+
+![redis_limit_kafka](images/redis_limit_kafka.jpg)
+
+guava 限流+kafka
+
+![guava_kafka](images/guava_kafka.jpg)
 

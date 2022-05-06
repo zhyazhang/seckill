@@ -35,7 +35,7 @@ public class SecKillController {
     private RedisLimit redisLimit;
 
 
-    private RateLimiter rateLimiter = RateLimiter.create(5);
+    private RateLimiter rateLimiter = RateLimiter.create(10);
 
 
     /**
@@ -134,6 +134,7 @@ public class SecKillController {
         int res = 0;
         try {
             if (redisLimit.limit()) {
+            //if (rateLimiter.tryAcquire()){
                 res = orderService.createOptimisticLockAndRedis(sid);
             }
         } catch (Exception e) {
@@ -154,7 +155,7 @@ public class SecKillController {
     public String createOrderWithLimitAndRedisAndKafka(int sid) {
 
         try {
-            if (redisLimit.limit()) {
+            if (rateLimiter.tryAcquire()) {
                 orderService.createOrderWithLimitAndRedisAndKafka(sid);
             }
         } catch (Exception e) {
@@ -163,6 +164,5 @@ public class SecKillController {
 
         return "请求正在处理，排队中";
     }
-
 
 }

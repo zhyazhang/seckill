@@ -94,10 +94,10 @@ public class StockServiceImpl implements StockService {
 
         // 热更新，但是在数据库中只有一个商品，直接赋值
         Stock stock = new Stock(id, count, sale, version);
-        stock.setId(id);
+        /*stock.setId(id);
         stock.setCount(count);
         stock.setSale(sale);
-        stock.setVersion(version);
+        stock.setVersion(version);*/
 
         return stock;
     }

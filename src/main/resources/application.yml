@@ -17,7 +17,7 @@ spring:
     maxWait: 10000
     testOnBorrow: true
     thetimeout: 100000
-    limit: 5
+    limit: 10
 
   kafka:
     bootstrap-servers: hadoop102:9092,hadoop103:9092,hadoop104:9092
