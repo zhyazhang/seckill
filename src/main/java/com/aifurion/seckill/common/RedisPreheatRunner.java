@@ -24,7 +24,6 @@ public class RedisPreheatRunner implements ApplicationRunner {
 
     @Override
     public void run(ApplicationArguments args) throws Exception {
-
         // 从数据库中查询热卖商品存入redis
         Stock stock = stockService.getStockById(1);
 
