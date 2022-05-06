@@ -134,7 +134,7 @@ public int createOptimisticLock(int sid) {
 int updateByOptimistic(Stock stock);
 ```
 
-#### 3 redis计数限流
+#### 3 Redis计数限流
 
 ![redis_limit](images/redis_limit.png)
 
@@ -223,7 +223,7 @@ end
 
 
 
-#### 4 redis缓存库存信息
+#### 4 Redis缓存库存信息
 
 ![read_redis_limit](images/read_redis_limit.png)
 
@@ -256,5 +256,72 @@ public void run(ApplicationArguments args) throws Exception {
 
 
 
+#### 5 Kafka异步
 
+服务器的资源是恒定的，你用或者不用它的处理能力都是一样的，所以出现峰值的话，很容易导致忙到处理不过来，闲的时候却又没有什么要处理，因此可以通过削峰来延缓用户请求的发出，让服务端处理变得更加平稳。
+
+可以使用消息队列 Kafka 来缓冲瞬时流量，将同步的直接调用转成异步的间接推送，中间通过一个队列在一端承接瞬时的流量洪峰，在另一端平滑地将消息推送出去。
+
+![kafka](images/kafka.png)
+
+```java
+/**
+ * 将消息发送到kafka
+ * @param sid
+ */
+@Override
+public void createOrderWithLimitAndRedisAndKafka(int sid) {
+
+    // redis校验库存
+    Stock stock = stockService.checkStockWithRedis(sid);
+
+    // 下单请求发送至 kafka，需要序列化 stock
+    kafkaTemplate.send(kafkaTopic, gson.toJson(stock));
+    log.info("消息发送至 Kafka 成功");
+}
+
+/**
+ * 监听消息
+ * @param sid
+ */
+public class ConsumerListen {
+    private Gson gson = new GsonBuilder().create();
+    @Autowired
+    private OrderService orderService;
+
+    @KafkaListener(topics = "seckill_topic")
+    public void listen(ConsumerRecord<String, String> record) {
+        try {
+            Optional<?> kafkaMessage = Optional.ofNullable(record.value());
+            // Object -> String
+            String message = (String) kafkaMessage.get();
+            // 反序列化
+            Stock stock = gson.fromJson((String) message, Stock.class);
+            // 创建订单
+            orderService.consumerTopicToCreateOrderWithKafka(stock);
+
+        } catch (Exception e) {
+            log.error("Exception:" + e);
+        }
+    }
+}
+
+/**
+ * 消费kafka消息
+ * @param stock
+ */
+@Override
+public void consumerTopicToCreateOrderWithKafka(Stock stock) {
+
+    // 乐观锁更新库存和 Redis
+    stockService.updateStockOptimisticLockWithRedis(stock);
+
+    int res = createOrder(stock);
+    if (res == 1) {
+        log.info("Kafka 消费 Topic 创建订单成功");
+    } else {
+        log.info("Kafka 消费 Topic 创建订单失败");
+    }
+}
+```
 
