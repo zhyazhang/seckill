@@ -537,21 +537,19 @@ guava限流
 
 ![gg_limit](images/gg_limit.jpg)
 
-
-
-redis限流+读redis
+redis限流+redis缓存
 
 ![read_redis_redis_limit](images/read_redis_redis_limit.jpg)
 
-guava限流+读redis
+guava限流+redis缓存
 
 ![gg_limit](images/gg_limit.jpg)
 
-redis限流+kafka
+redis限流+kafka异步
 
 ![redis_limit_kafka](images/redis_limit_kafka.jpg)
 
-guava 限流+kafka
+guava 限流+kafka异步
 
 ![guava_kafka](images/guava_kafka.jpg)
 
