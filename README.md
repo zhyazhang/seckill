@@ -250,46 +250,148 @@ class FunnelRateLimiter {
 
 ![token_limit](images/token_limit.png)
 
-> Google开源工具包Guava提供了限流工具类RateLimiter，该类基于令牌桶算法来完成限流。
+> `Google`开源工具包`Guava`提供了限流工具类`RateLimiter`，该类基于令牌桶算法来完成限流。
+>
+> `Guava`有两种限流模式，一种为稳定模式(`SmoothBursty`:令牌生成速度恒定)，一种为渐进模式(`SmoothWarmingUp`:令牌生成速度缓慢提升直到维持在一个稳定值) 两种模式实现思路类似，主要区别在等待时间的计算上。
+
+通过调用`RateLimiter`的`create`接口来创建实例，实际是调用的`SmoothBuisty`稳定模式创建的实例。
 
 ```java
-public double acquire() {
-    return acquire(1);
+public static RateLimiter create(double permitsPerSecond) {
+    return create(permitsPerSecond, SleepingStopwatch.createFromSystemTimer());
 }
 
- public double acquire(int permits) {
-    checkPermits(permits);  //检查参数是否合法（是否大于0）
-    long microsToWait;
-    synchronized (mutex) { //应对并发情况需要同步
-        microsToWait = reserveNextTicket(permits, readSafeMicros()); //获得需要等待的时间 
-    }
-    ticker.sleepMicrosUninterruptibly(microsToWait); //等待，当未达到限制时，microsToWait为0
-    return 1.0 * microsToWait / TimeUnit.SECONDS.toMicros(1L);
-}
-
-private long reserveNextTicket(double requiredPermits, long nowMicros) {
-    resync(nowMicros); //补充令牌
-    long microsToNextFreeTicket = nextFreeTicketMicros - nowMicros;
-    double storedPermitsToSpend = Math.min(requiredPermits, this.storedPermits); //获取这次请求消耗的令牌数目
-    double freshPermits = requiredPermits - storedPermitsToSpend;
-
-    long waitMicros = storedPermitsToWaitTime(this.storedPermits, storedPermitsToSpend)
-            + (long) (freshPermits * stableIntervalMicros); 
-
-    this.nextFreeTicketMicros = nextFreeTicketMicros + waitMicros;
-    this.storedPermits -= storedPermitsToSpend; // 减去消耗的令牌
-    return microsToNextFreeTicket;
-}
-
-private void resync(long nowMicros) {
-    // if nextFreeTicket is in the past, resync to now
-    if (nowMicros > nextFreeTicketMicros) {
-        storedPermits = Math.min(maxPermits,
-                storedPermits + (nowMicros - nextFreeTicketMicros) / stableIntervalMicros);
-        nextFreeTicketMicros = nowMicros;
-    }
+//SleepingStopwatch：时钟类实例，通过这个来计算时间及令牌
+//maxBurstSeconds：在ReteLimiter未使用时，最多保存几秒的令牌，默认是1
+static RateLimiter create(double permitsPerSecond, SleepingStopwatch stopwatch) {
+    RateLimiter rateLimiter = new SmoothBursty(stopwatch, 1.0 /* maxBurstSeconds */);
+    rateLimiter.setRate(permitsPerSecond);
+    return rateLimiter;
 }
 ```
+
+**SmoothRateLimiter关键属性**
+
+```java
+/**
+ * 在RateLimiter未使用时，最多存储几秒的令牌
+ * */
+ final double maxBurstSeconds;
+
+/**
+ * 当前存储令牌数
+ */
+double storedPermits;
+
+/**
+ * 最大存储令牌数 = maxBurstSeconds * stableIntervalMicros(见下文)
+ */
+double maxPermits;
+
+/**
+ * 添加令牌时间间隔 = SECONDS.toMicros(1L) / permitsPerSecond；(1秒/每秒的令牌数)
+ */
+double stableIntervalMicros;
+
+/**
+ * 下一次请求可以获取令牌的起始时间
+ * 由于RateLimiter允许预消费，上次请求预消费令牌后
+ * 下次请求需要等待相应的时间到nextFreeTicketMicros时刻才可以获取令牌
+ */
+private long nextFreeTicketMicros = 0L; // could be either in the past or future
+
+```
+
+**几个关键函数**
+
+```java
+//通过这个接口设置令牌通每秒生成令牌的数量，内部时间通过调用SmoothRateLimiter的doSetRate来实现
+public final void setRate(double permitsPerSecond) {
+  checkArgument(
+      permitsPerSecond > 0.0 && !Double.isNaN(permitsPerSecond), "rate must be positive");
+  synchronized (mutex()) {
+    doSetRate(permitsPerSecond, stopwatch.readMicros());
+  }
+}
+
+//先通过调用resync生成令牌以及更新下一期令牌生成时间，然后更新stableIntervalMicros，最后又调用了SmoothBursty的doSetRate
+@Override
+final void doSetRate(double permitsPerSecond, long nowMicros) {
+  resync(nowMicros);
+  double stableIntervalMicros = SECONDS.toMicros(1L) / permitsPerSecond;
+  this.stableIntervalMicros = stableIntervalMicros;
+  doSetRate(permitsPerSecond, stableIntervalMicros);
+}
+
+void resync(long nowMicros) {
+  // 当前时间是否大于下一个令牌生成时间
+  if (nowMicros > nextFreeTicketMicros) {
+    // 可生成的令牌数 newPermits = （当前时间 - 下一个令牌生成时间）/ 令牌生成时间间隔。
+    // 如果 QPS 为2，这里的 coolDownIntervalMicros 就是 500000.0 微秒(500ms)
+    double newPermits = (nowMicros - nextFreeTicketMicros) / coolDownIntervalMicros();
+    // 更新令牌库存 storedPermits。
+    storedPermits = min(maxPermits, storedPermits + newPermits);
+    // 更新下一个令牌生成时间 nextFreeTicketMicros
+    nextFreeTicketMicros = nowMicros;
+  }
+}
+```
+
+根据令牌桶算法，桶中的令牌是持续生成存放的，有请求时需要先从桶中拿到令牌才能开始执行，谁来持续生成令牌存放呢？
+
+1. 开启一个定时任务，由定时任务持续生成令牌。这样的问题在于会极大的消耗系统资源，如，某接口需要分别对每个用户做访问频率限制，假设系统中存在6W用户，则至多需要开启6W个定时任务来维持每个桶中的令牌数，这样的开销是巨大的。
+2. 延迟计算，如上`resync`函数。该函数会在每次获取令牌之前调用，其实现思路为，若当前时间晚于`nextFreeTicketMicros`，则计算该段时间内可以生成多少令牌，将生成的令牌加入令牌桶中并更新数据。是在每次令牌获取时才进行计算令牌是否足够的。它通过存储的下一个令牌生成的时间，和当前获取令牌的时间差，再结合阈值，去计算令牌是否足够，同时再记录下一个令牌的生成时间以便下一次调用。
+
+```java
+@Override
+void doSetRate(double permitsPerSecond, double stableIntervalMicros) {
+  double oldMaxPermits = this.maxPermits;
+  maxPermits = maxBurstSeconds * permitsPerSecond;
+  if (oldMaxPermits == Double.POSITIVE_INFINITY) {
+    // if we don't special-case this, we would get storedPermits == NaN, below
+    storedPermits = maxPermits;
+  } else {
+    storedPermits =
+        (oldMaxPermits == 0.0)
+            ? 0.0 // initial state
+            : storedPermits * maxPermits / oldMaxPermits;
+  }
+}
+```
+
+桶中可存放的最大令牌数由`maxBurstSeconds`计算而来，其含义为最大存储`maxBurstSeconds`秒生成的令牌。该参数的作用在于，可以更为灵活地控制流量。
+
+```java
+@CanIgnoreReturnValue
+public double acquire() {
+  return acquire(1);
+}
+
+
+@CanIgnoreReturnValue
+public double acquire(int permits) {
+  long microsToWait = reserve(permits);
+  stopwatch.sleepMicrosUninterruptibly(microsToWait);
+  return 1.0 * microsToWait / SECONDS.toMicros(1L);
+}
+
+
+final long reserve(int permits) {
+  checkPermits(permits);
+  synchronized (mutex()) {
+    return reserveAndGetWaitLength(permits, stopwatch.readMicros());
+  }
+}
+
+final long reserveAndGetWaitLength(int permits, long nowMicros) {
+  long momentAvailable = reserveEarliestAvailable(permits, nowMicros);
+  return max(momentAvailable - nowMicros, 0);
+}
+```
+
+`acquire`函数主要用于获取`permits`个令牌，并计算需要等待多长时间，进而挂起等待，并将该值返回，主要通过`reserve`返回需要等待的时间，`reserve`中通过调用`reserveAndGetWaitLength`获取等待时间
+
+`tryAcquire`函数可以尝试在`timeout`时间内获取令牌，如果可以则挂起等待相应时间并返回`true`，否则立即返回`false`。`canAcquire`用于判断`timeout`时间内是否可以获取令牌，通过判断当前时间+超时时间是否大于`nextFreeTicketMicros `来决定是否能够拿到足够的令牌数，如果可以获取到，则过程同`acquire`，线程`sleep`等待，如果通过`canAcquire`在此超时时间内不能回去到令牌，则可以快速返回，不需要等待`timeout`后才知道能否获取到令牌。
 
 
 
