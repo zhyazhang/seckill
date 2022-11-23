@@ -389,7 +389,7 @@ final long reserveAndGetWaitLength(int permits, long nowMicros) {
 }
 ```
 
-`acquire`函数主要用于获取`permits`个令牌，并计算需要等待多长时间，进而挂起等待，并将该值返回，主要通过`reserve`返回需要等待的时间，`reserve`中通过调用`reserveAndGetWaitLength`获取等待时间
+`acquire`函数主要用于获取`permits`个令牌，并计算需要等待多长时间，进而挂起等待，并将该值返回，主要通过`reserve`返回需要等待的时间，`reserve`中通过调用`reserveAndGetWaitLength`获取等待时间。
 
 `tryAcquire`函数可以尝试在`timeout`时间内获取令牌，如果可以则挂起等待相应时间并返回`true`，否则立即返回`false`。`canAcquire`用于判断`timeout`时间内是否可以获取令牌，通过判断当前时间+超时时间是否大于`nextFreeTicketMicros `来决定是否能够拿到足够的令牌数，如果可以获取到，则过程同`acquire`，线程`sleep`等待，如果通过`canAcquire`在此超时时间内不能回去到令牌，则可以快速返回，不需要等待`timeout`后才知道能否获取到令牌。
 
